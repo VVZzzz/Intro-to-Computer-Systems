@@ -1,0 +1,61 @@
+# Test of insert_head and remove_head
+# Test of insert_head, insert_tail, and remove_head
+# Test of insert_head, insert_tail, reverse, and remove_head
+# Test of insert_head, insert_tail, and size
+ERROR:  Computed queue size as 6, but correct value is 2
+# Test of insert_head, insert_tail, remove_head reverse, and size
+ERROR:  Computed queue size as 6, but correct value is 5
+ERROR:  Computed queue size as 6, but correct value is 0
+# Test operations on NULL queue
+ERROR: Segmentation fault occurred.  You dereferenced a NULL or invalid pointer
+ERROR: Segmentation fault occurred.  You dereferenced a NULL or invalid pointer
+# Test operations on empty queue
+ERROR: Segmentation fault occurred.  You dereferenced a NULL or invalid pointer
+# Test remove_head with NULL argument
+ERROR: Segmentation fault occurred.  You dereferenced a NULL or invalid pointer
+# Test of malloc failure on new
+ERROR: Segmentation fault occurred.  You dereferenced a NULL or invalid pointer
+# Test of malloc failure on insert_head
+can't allocate space!
+can't allocate space!
+can't allocate space!
+# Test of malloc failure on insert_tail
+can't allocate space!
+can't allocate space!
+can't allocate space!
+can't allocate space!
+can't allocate space!
+can't allocate space!
+# Test performance of insert_tail
+# Test performance of size
+# Test performance of insert_tail, size, and reverse
+---	Trace		Points
++++ TESTING trace trace-01-ops:
+---	trace-01-ops	7/7
++++ TESTING trace trace-02-ops:
+---	trace-02-ops	7/7
++++ TESTING trace trace-03-ops:
+---	trace-03-ops	7/7
++++ TESTING trace trace-04-ops:
+---	trace-04-ops	0/7
++++ TESTING trace trace-05-ops:
+---	trace-05-ops	0/7
++++ TESTING trace trace-06-robust:
+---	trace-06-robust	0/7
++++ TESTING trace trace-07-robust:
+---	trace-07-robust	0/7
++++ TESTING trace trace-08-robust:
+---	trace-08-robust	0/7
++++ TESTING trace trace-09-malloc:
+---	trace-09-malloc	7/7
++++ TESTING trace trace-10-malloc:
+---	trace-10-malloc	7/7
++++ TESTING trace trace-11-malloc:
+---	trace-11-malloc	7/7
++++ TESTING trace trace-12-perf:
+---	trace-12-perf	7/7
++++ TESTING trace trace-13-perf:
+---	trace-13-perf	8/8
++++ TESTING trace trace-14-perf:
+---	trace-14-perf	8/8
+---	TOTAL		65/100
