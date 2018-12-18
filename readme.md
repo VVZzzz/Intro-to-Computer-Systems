@@ -3,3 +3,4 @@
 - [c-programming lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/1-interview/cprogramminglab-handout)
 - [data lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/2-datalab/datalab-handout)
 - [bomb lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/3-MachineProg)
+- [Attack lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/4-attacklab)
