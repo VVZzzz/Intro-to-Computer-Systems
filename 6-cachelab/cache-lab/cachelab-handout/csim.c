@@ -1,6 +1,7 @@
 ﻿#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include "cachelab.h"
 
@@ -40,21 +41,17 @@ typedef struct {
  */
 Cache build_cache(long long num_sets, int num_lines, long long block_size) {
   Cache new_cache;
-  Cache_set new_cache_set;
-  Cache_set_line new_cache_set_line;
   int set_index;
   int line_index;
   new_cache.sets = (Cache_set *)malloc(sizeof(Cache_set) * num_sets);
   for (set_index = 0; set_index < num_sets; set_index++) {
-    new_cache_set.lines =
+    new_cache.sets[set_index].lines =
         (Cache_set_line *)malloc(sizeof(Cache_set_line) * num_lines);
     for (line_index = 0; line_index < num_lines; line_index++) {
-      new_cache_set_line.last_used = 0;
-      new_cache_set_line.valid = 0;
-      new_cache_set_line.tag = 0;
-      new_cache_set.lines[line_index] = new_cache_set_line;
+      new_cache.sets[set_index].lines[line_index].last_used = 0;
+      new_cache.sets[set_index].lines[line_index].valid = 0;
+      new_cache.sets[set_index].lines[line_index].tag = 0;
     }
-    new_cache.sets[set_index] = new_cache_set;
   }
   return new_cache;
 }
@@ -118,8 +115,7 @@ int find_evic_line(Cache_set cache_set, Cache_para para, int *used_lines) {
 }
 
 /* simulate reading cache procedure*/
-Cache_para run_read_sim(Cache sim_cache, Cache_para para,
-                         mem_addr_t address) {
+Cache_para run_read_sim(Cache sim_cache, Cache_para para, mem_addr_t address) {
   int line_index;
   int num_lines = para.E;
   int cache_full = 1;
@@ -127,7 +123,8 @@ Cache_para run_read_sim(Cache sim_cache, Cache_para para,
   int tag_size = 64 - (para.b + para.s);
   mem_addr_t input_tag = (address >> (para.s + para.b));
   mem_addr_t temp = (address << tag_size);
-  mem_addr_t set_index = (temp >> para.b);
+  // mem_addr_t set_index = (temp >> para.b);
+  mem_addr_t set_index = (temp >> (64 - para.s));
 
   Cache_set cache_set = sim_cache.sets[set_index];
   for (line_index = 0; line_index < num_lines; line_index++) {
@@ -167,9 +164,9 @@ Cache_para run_read_sim(Cache sim_cache, Cache_para para,
     cache_set.lines[min_used_index].last_used = used_line[1] + 1;
   } else {
     int empty_line_index = find_emptyline(cache_set, para);
-    cache_set.lines[min_used_index].tag = input_tag;
-    cache_set.lines[min_used_index].valid = 1;
-    cache_set.lines[min_used_index].last_used = used_line[1] + 1;
+    cache_set.lines[empty_line_index].tag = input_tag;
+    cache_set.lines[empty_line_index].valid = 1;
+    cache_set.lines[empty_line_index].last_used = used_line[1] + 1;
   }
   free(used_line);
   return para;
@@ -192,13 +189,13 @@ void print_help(char *argv[]) {
 int main(int argc, char **argv) {
   char c;
   char *trace_file = NULL;
-  int verbose_flag = NULL;
+  // int verbose_flag = 0;
 
   Cache_para param;
   Cache sim_cache;
   long long num_sets;
   long long block_size;
-  bzero(&param, sizeof(param));
+  memset(&param, 0, sizeof(param));
 
   FILE *read_trace;
   char trace_cmd;
@@ -206,7 +203,7 @@ int main(int argc, char **argv) {
   int size;
 
   /*command line opt*/
-  while (c = getopt(argc, argv, "s:E:b:t:vh") != -1) {
+  while ((c = getopt(argc, argv, "s:E:b:t:vh")) != -1) {
     switch (c) {
       case 's':
         param.s = atoi(optarg);
@@ -221,7 +218,8 @@ int main(int argc, char **argv) {
         trace_file = optarg;
         break;
       case 'v':
-        verbose_flag = 1;
+        // verbose_flag = 1;
+        break;
       case 'h':
         print_help(argv);
         exit(0);
@@ -233,6 +231,7 @@ int main(int argc, char **argv) {
   if (param.s == 0 || param.E == 0 || param.b == 0 || trace_file == NULL) {
     printf("%s: Missing required command line\n", argv[0]);
     print_help(argv);
+    exit(1);
   }
 
   /*processing trace file*/
