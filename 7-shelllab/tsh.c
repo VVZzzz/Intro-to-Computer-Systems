@@ -87,6 +87,12 @@ handler_t *Signal(int signum, handler_t *handler);
 /* Here are the system functions wrappers (csapp.h/c)*/
 pid_t Fork(void);
 // void Execve(const char *filename, char *const argv[], char *const envp[]);
+pid_t Waitpid(pid_t pid, int *iptr, int options);
+void Setpgid(pid_t pid, pid_t pgid);
+void Sigfillset(sigset_t *set);
+void Sigemptyset(sigset_t *set);
+void Sigaddset(sigset_t *set, int signum);
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 
 /*
  * main - The shell's main routine
@@ -168,23 +174,34 @@ void eval(char *cmdline) {
   char *args[MAXARGS]; /*cmdline args*/
   int bg;              /* back ground*/
   pid_t pid;           /* process id*/
+  sigset_t mask;       /* signal block set */
   bg = parseline(cmdline, args);
 
   if (args[0] == NULL) return;
+  Sigemptyset(&mask);
+  Sigaddset(&mask, SIGCHLD);
+  Sigprocmask(SIG_BLOCK, &mask, NULL); /* block SIGCHILD */
 
   /* if args[0] is not builtin command, exec it*/
   if (!builtin_cmd(args)) {
     if ((pid = Fork()) == 0) {
+      Setpgid(0, 0); /* If not setpgid(0,0) , ctrl+c will shut down your shell.
+                        (because SIGINT will be sent to every fg process in the
+                        group) , so set every process different group*/
+      Sigprocmask(SIG_UNBLOCK, &mask, NULL); /* unblock SIGCHLD */
       if (execve(args[0], args, environ) < 0) {
         printf("%s: Command not found\n", args[0]);
         exit(0);
       }
     }
 
-    if (!bg) {
-      addjob(jobs,pid,FG,cmdline);
+    if (!bg) { /* foreground process */
+      addjob(jobs, pid, FG, cmdline);
+      Sigprocmask(SIG_UNBLOCK, &mask, NULL); /* unblock SIGCHLD after add job*/
       waitfg(pid);
-    } else {
+    } else { /* background process */
+      addjob(jobs, pid, BG, cmdline);
+      Sigprocmask(SIG_UNBLOCK, &mask, NULL); /* unblock SIGCHLD after add job*/
       printf("[%d] (%d) %s", pid2jid(pid), (int)pid, cmdline);
     }
   }
@@ -283,7 +300,7 @@ void do_bgfg(char **argv) { return; }
 void waitfg(pid_t pid) {
   /* according to writeup, in waitfg use a busy loop around the sleep function
    */
-  /*
+
   while (1) {
     if (pid != fgpid(jobs)) {
       if (verbose)
@@ -293,10 +310,13 @@ void waitfg(pid_t pid) {
       sleep(1);
     }
   }
-  */
+  return;
+
+  /*
   int status;
   if (waitpid(pid, &status, 0) < 0) printf("waitfg: waitpid (%d) error", pid);
   return;
+  */
 }
 
 /*****************
@@ -310,7 +330,27 @@ void waitfg(pid_t pid) {
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.
  */
-void sigchld_handler(int sig) { return; }
+void sigchld_handler(int sig) {
+  if (verbose) printf("sigchld_handler: entering\n");
+
+  pid_t pid;
+  int status;
+  int jid;
+  while ((pid = Waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+    jid = pid2jid(pid);
+
+    if (WIFEXITED(status)) {
+      deletejob(jobs, pid);
+      if (verbose)
+        printf("sigchld_handler: Job [%d] (%d) deleted\n", jid, (int)pid);
+      if (verbose)
+        printf("sigchld_handler: Job [%d] (%d) terminates OK (status %d)\n",
+               jid, (int)pid, WEXITSTATUS(status));
+    }
+  }
+  if (verbose) printf("sigchld_handler: exiting\n");
+  return;
+}
 
 /*
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
@@ -529,9 +569,47 @@ pid_t Fork(void) {
   return pid;
 }
 
+pid_t Waitpid(pid_t pid, int *iptr, int options) {
+  pid_t retpid;
+
+  if ((retpid = waitpid(pid, iptr, options)) < 0)
+    /* Don't use unix_error("....") , because when there is no child processes ,
+     * waitpid() return -1, and unix_error() will cause exit(1) */
+    // unix_error("Waitpid error");
+    ;
+  return (retpid);
+}
+
 /* safe excve() wrapper */
 /*
 void Execve(const char *filename, char *const argv[], char *const envp[]) {
   if (execve(filename, argv, envp) < 0) unix_error("Execve error");
 }
 */
+
+void Setpgid(pid_t pid, pid_t pgid) {
+  if (setpgid(pid, pgid) < 0) {
+    unix_error("Setpgid error");
+  }
+  return;
+}
+
+void Sigfillset(sigset_t *set) {
+  if (sigfillset(set) < 0) unix_error("Sigfillset error");
+  return;
+}
+
+void Sigemptyset(sigset_t *set) {
+  if (sigemptyset(set) < 0) unix_error("Sigemptyset error");
+  return;
+}
+
+void Sigaddset(sigset_t *set, int signum) {
+  if (sigaddset(set, signum) < 0) unix_error("Sigaddset error");
+  return;
+}
+
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+  if (sigprocmask(how, set, oldset) < 0) unix_error("Sigprocmask error");
+  return;
+}
