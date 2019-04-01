@@ -88,6 +88,7 @@ handler_t *Signal(int signum, handler_t *handler);
 pid_t Fork(void);
 // void Execve(const char *filename, char *const argv[], char *const envp[]);
 pid_t Waitpid(pid_t pid, int *iptr, int options);
+void Kill(pid_t pid, int sig);
 void Setpgid(pid_t pid, pid_t pgid);
 void Sigfillset(sigset_t *set);
 void Sigemptyset(sigset_t *set);
@@ -291,8 +292,46 @@ int builtin_cmd(char **argv) {
 
 /*
  * do_bgfg - Execute the builtin bg and fg commands
+ * bg %jid OR bg pid
+ * fg %jid OR bg pid
  */
-void do_bgfg(char **argv) { return; }
+void do_bgfg(char **argv) {
+  if (argv[1] == NULL) {
+    printf("%s command requires PID or %%jobid argument\n", argv[0]);
+    return;
+  }
+  int is_jobid = (argv[1][0] == '%' ? 1 : 0);
+  job_t *givenjob;
+  if (is_jobid) {
+    givenjob = getjobjid(jobs, atoi(argv[1][1]));
+    if (givenjob == NULL) {
+      printf("%s: No such job\n", argv[1]);
+      return;
+    }
+  } else {
+    givenjob = getjobpid(jobs, atoi(argv[1]));
+    if (givenjob == NULL) {
+      printf("(%d): No such process\n", argv[1]);
+      return;
+    }
+  }
+
+  // fg->bg or bg->fg, first change state,then send signal
+  if (strcmp(argv[0], "bg") == 0) {
+    givenjob->state == BG;
+    printf("[%d] (%d) %s", givenjob->jid, givenjob->pid, givenjob->cmdline);
+    Kill(-givenjob->pid, SIGCONT);
+  } else {
+    givenjob->state == BG;
+    printf("[%d] (%d) %s", givenjob->jid, givenjob->pid, givenjob->cmdline);
+    Kill(-givenjob->pid, SIGCONT);
+    // waitfg means wait the fgjob untill it finish.
+    // waitfg use loop to makesure fg
+    waitfg(givenjob->pid);
+  }
+
+  return;
+}
 
 /*
  * waitfg - Block until process pid is no longer the foreground process
@@ -339,6 +378,7 @@ void sigchld_handler(int sig) {
   while ((pid = Waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
     jid = pid2jid(pid);
 
+    // return true if the childprocess terminated normally
     if (WIFEXITED(status)) {
       deletejob(jobs, pid);
       if (verbose)
@@ -346,6 +386,20 @@ void sigchld_handler(int sig) {
       if (verbose)
         printf("sigchld_handler: Job [%d] (%d) terminates OK (status %d)\n",
                jid, (int)pid, WEXITSTATUS(status));
+    } else if (WIFSIGNALED(status)) {
+      // return true if the childprocess terminated because of a signal that
+      // was not caught
+      deletejob(jobs, pid);
+      if (verbose)
+        printf("sigchld_handler: Job [%d] (%d) deleted\n", jid, (int)pid);
+      // WTERMSIG(status) return the real signal that cause terminate.
+      printf("Job [%d] (%d) terminated by signal %d\n", jid, (int)pid,
+             WTERMSIG(status));
+    } else if (WIFSTOPPED(status)) {
+      // return true if the signal is stppped
+      getjobpid(jobs, pid)->state = ST;  // change job status to STOPPED
+      printf("Job [%d] (%d) stopped by signal %d\n", jid, (int)pid,
+             WSTOPSIG(status));
     }
   }
   if (verbose) printf("sigchld_handler: exiting\n");
@@ -357,14 +411,49 @@ void sigchld_handler(int sig) {
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.
  */
-void sigint_handler(int sig) { return; }
+void sigint_handler(int sig) {
+  if (verbose) printf("sigint_handler: entering\n");
+  pid_t pid = fgpid(jobs);
+  if (pid != 0) {
+    /* pid is a positive number , if kill (pid,sig) pid > 0, just send sig to
+     * one process(pid). if pid < 0 , send sig to every process of  |pid|'s
+     * group
+     */
+    Kill(-pid, sig);
+    if (verbose)
+      printf(
+          "sigint_handler: Job [%d] and its entire foreground jobs with same "
+          "process group are killed\n",
+          (int)pid);
+  }
+  if (verbose) printf("sigint_handler: exiting\n");
+}
 
 /*
  * sigtstp_handler - The kernel sends a SIGTSTP to the shell whenever
  *     the user types ctrl-z at the keyboard. Catch it and suspend the
  *     foreground job by sending it a SIGTSTP.
  */
-void sigtstp_handler(int sig) { return; }
+void sigtstp_handler(int sig) {
+  // this function is the same as sigint_handler
+  // the difference is sig,in this func sig means SIGTSTP
+  // use kill to send signal
+  if (verbose) printf("sigstp_handler: entering\n");
+  pid_t pid = fgpid(jobs);
+  if (pid != 0) {
+    /* pid is a positive number , if kill (pid,sig) pid > 0, just send sig to
+     * one process(pid). if pid < 0 , send sig to every process of  |pid|'s
+     * group
+     */
+    Kill(-pid, sig);
+    if (verbose)
+      printf(
+          "sigstp_handler: Job [%d] and its entire foreground jobs with same "
+          "process group are killed\n",
+          (int)pid);
+  }
+  if (verbose) printf("sigstp_handler: exiting\n");
+}
 
 /*********************
  * End signal handlers
@@ -573,11 +662,17 @@ pid_t Waitpid(pid_t pid, int *iptr, int options) {
   pid_t retpid;
 
   if ((retpid = waitpid(pid, iptr, options)) < 0)
-    /* Don't use unix_error("....") , because when there is no child processes ,
-     * waitpid() return -1, and unix_error() will cause exit(1) */
+    /* Don't use unix_error("....") , because when there is no child processes
+     * , waitpid() return -1, and unix_error() will cause exit(1) */
     // unix_error("Waitpid error");
     ;
   return (retpid);
+}
+
+void Kill(pid_t pid, int sig) {
+  if (kill(pid, sig) < 0) {
+    unix_error("kill error");
+  }
 }
 
 /* safe excve() wrapper */
