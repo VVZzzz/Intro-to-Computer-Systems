@@ -179,12 +179,14 @@ void eval(char *cmdline) {
   bg = parseline(cmdline, args);
 
   if (args[0] == NULL) return;
-  Sigemptyset(&mask);
-  Sigaddset(&mask, SIGCHLD);
-  Sigprocmask(SIG_BLOCK, &mask, NULL); /* block SIGCHILD */
 
   /* if args[0] is not builtin command, exec it*/
   if (!builtin_cmd(args)) {
+    Sigemptyset(&mask);
+    Sigaddset(&mask, SIGCHLD);
+    Sigprocmask(SIG_BLOCK, &mask, NULL); /* block SIGCHILD */
+
+    // child process
     if ((pid = Fork()) == 0) {
       Setpgid(0, 0); /* If not setpgid(0,0) , ctrl+c will shut down your shell.
                         (because SIGINT will be sent to every fg process in the
@@ -196,6 +198,7 @@ void eval(char *cmdline) {
       }
     }
 
+    // parent process
     if (!bg) { /* foreground process */
       addjob(jobs, pid, FG, cmdline);
       Sigprocmask(SIG_UNBLOCK, &mask, NULL); /* unblock SIGCHLD after add job*/
@@ -300,10 +303,15 @@ void do_bgfg(char **argv) {
     printf("%s command requires PID or %%jobid argument\n", argv[0]);
     return;
   }
+  if (!isdigit(argv[1][0]) && (argv[1][0] != '%')) {
+    printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+    return;
+  }
   int is_jobid = (argv[1][0] == '%' ? 1 : 0);
-  job_t *givenjob;
+  struct job_t *givenjob;
   if (is_jobid) {
-    givenjob = getjobjid(jobs, atoi(argv[1][1]));
+    // atoi(&argv[1][1]) , need '&'!
+    givenjob = getjobjid(jobs, atoi(&argv[1][1]));
     if (givenjob == NULL) {
       printf("%s: No such job\n", argv[1]);
       return;
@@ -311,20 +319,20 @@ void do_bgfg(char **argv) {
   } else {
     givenjob = getjobpid(jobs, atoi(argv[1]));
     if (givenjob == NULL) {
-      printf("(%d): No such process\n", argv[1]);
+      printf("(%s): No such process\n", argv[1]);
       return;
     }
   }
 
   // fg->bg or bg->fg, first change state,then send signal
   if (strcmp(argv[0], "bg") == 0) {
-    givenjob->state == BG;
+    givenjob->state = BG;
     printf("[%d] (%d) %s", givenjob->jid, givenjob->pid, givenjob->cmdline);
-    Kill(-givenjob->pid, SIGCONT);
+    Kill(-(givenjob->pid), SIGCONT);
   } else {
-    givenjob->state == BG;
+    givenjob->state = FG;
     printf("[%d] (%d) %s", givenjob->jid, givenjob->pid, givenjob->cmdline);
-    Kill(-givenjob->pid, SIGCONT);
+    Kill(-(givenjob->pid), SIGCONT);
     // waitfg means wait the fgjob untill it finish.
     // waitfg use loop to makesure fg
     waitfg(givenjob->pid);
