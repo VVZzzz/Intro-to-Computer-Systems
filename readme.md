@@ -7,3 +7,5 @@
 - [Performance lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/5-performancelab)
 - [cache-lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/tree/master/6-cachelab)
 - [shell lab](https://github.com/VVZzzz/Intro-to-Computer-Systems/blob/master/7-shelllab)
+- [malloc lab]()
+- [proxy lab]()
